@@ -9,13 +9,15 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+#Introduction
 For this project, we will be creating a movie recommendation system using the MovieLens dataset. The version of movielens included in the dslabs package is just a small subset of a much larger dataset with millions of ratings. We will be creating our own recommendation system.  We will use the 10M version of the MovieLens dataset to make the computation a little easier.
 We will train a machine learning algorithm using the inputs in one subset to predict movie ratings in the validation set. 
 
 ***
 
-#Create edx set, validation set
+#Analysis
 
+#Create edx set, validation set
 
 ```{r include = FALSE}
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
@@ -169,15 +171,74 @@ predicted_ratings <- mu + validation %>%
 
 ###To view the rmse results of just the average vs the model generated using naive approach:
 ```{r rmse_results}
-rmse <- RMSE(predicted_ratings, validation$rating)
+model_1_rmse <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="Naive Model",  
-                                     RMSE = rmse ))
+                          data_frame(method="Movie Effect Model",  
+                                     RMSE = model_1_rmse ))
 rmse_results %>% knitr::kable()
 ```
 
+***
 
-###The RMSE is:
-```{r final_rmse}
+#Improvements
+The RMSE is 0.944 which is still high.  Let's try something better.
+Let's compute the average rating for user u, for those that have rated over 100 movies.
+```{r good_users}
+validation %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating)) %>% 
+  filter(n()>=100) %>%
+  ggplot(aes(b_u)) + 
+  geom_histogram(bins = 30, color = "black")
+```
+
+How about cranky users who often give bad ratings to good movies? Or how about users who love everything they watch?
+We will use bu as the user-specific effect.
+So now if a cranky user-- this is a negative bu-- rates a great movie, which will have a positive b i, the effects
+counter each other, and we may be able to correctly predict that this user gave a great movie a three rather than a five, 
+which will happen, and that should improve our predictions.
+
+We will compute our approximation by computing the overall mean, u-hat, the movie effects, b-hat i,
+and then estimating the user effects, b u-hat, by taking the average of the residuals obtained after removing the overall mean 
+and the movie effect from the ratings yui.
+The code looks like this.
+```{r new_avg}
+user_avgs <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu - b_i))
+```
+
+***
+
+#Results
+
+###We can now construct predictors and see how much the RMSE improves:
+```{r new_prediction}
+predicted_ratings <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_2_rmse <- RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Movie + User Effects Model",  
+                                     RMSE = model_2_rmse ))
+
+rmse_results %>% knitr::kable()
+```
+
+###Our residual error dropped down to about 0.84!
+```{r better_rmse}
+rmse <- model_2_rmse
 rmse
 ```
+
+***
+
+#Conclusion
+In this project, we have tried different methods of prediction.  First we computed the RMSE for just using the average. 
+Then we tried using the naive approach and improved RMSE from 1.06 to 0.944.  However, we managed to improve it even further
+by selecting users with more ratings, then adjust results for cranky users who often give bad ratings to good movies.  After that,
+we improved the RMSE to 0.849.

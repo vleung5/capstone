@@ -85,10 +85,45 @@ predicted_ratings <- mu + validation %>%
   .$b_i
 
 
-rmse <- RMSE(predicted_ratings, validation$rating)
+model_1_rmse <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="Movie Effect Model",  
-                                     RMSE = rmse ))
+                                     RMSE = model_1_rmse ))
 rmse_results %>% knitr::kable()
 
+
+#rmse is 0.944 which is still high.  Let's try something better.
+#Let's compute the average rating for user u, for those that have rated over 100 movies.
+validation %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating)) %>% 
+  filter(n()>=100) %>%
+  ggplot(aes(b_u)) + 
+  geom_histogram(bins = 30, color = "black")
+
+#We will compute our approximation by computing the overall mean, u-hat, the movie effects, b-hat i,
+#and then estimating the user effects, b u-hat, by taking the average of the residuals obtained
+#after removing the overall mean and the movie effect from the ratings yui.
+#The code looks like this.
+user_avgs <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu - b_i))
+
+#We can now construct predictors and see how much the RMSE improves:
+predicted_ratings <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_2_rmse <- RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Movie + User Effects Model",  
+                                     RMSE = model_2_rmse ))
+
+rmse_results %>% knitr::kable()
+#Our residual error dropped down to about 0.84.
+
+rmse <- model_2_rmse
 rmse
